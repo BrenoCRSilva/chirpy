@@ -31,7 +31,9 @@ func (cfg *apiConfig) showMetrics(w http.ResponseWriter, r *http.Request) {
     `, hits)
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(text))
+	if _, err := w.Write([]byte(text)); err != nil {
+		log.Printf("Error writing response: %v", err)
+	}
 }
 
 func (cfg *apiConfig) resetMetrics(w http.ResponseWriter, _ *http.Request) {
@@ -63,7 +65,9 @@ func chirpValidateHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(500)
-		w.Write(data)
+		if _, err := w.Write([]byte(data)); err != nil {
+			log.Printf("Error writing response: %v", err)
+		}
 		return
 	} else if len(chirp.Body) > 140 {
 		error := ReturnError{
@@ -76,7 +80,9 @@ func chirpValidateHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(400)
-		w.Write(data)
+		if _, err := w.Write([]byte(data)); err != nil {
+			log.Printf("Error writing response: %v", err)
+		}
 		return
 	} else {
 		valid := ReturnValid{
@@ -89,7 +95,9 @@ func chirpValidateHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(200)
-		w.Write(data)
+		if _, err := w.Write([]byte(data)); err != nil {
+			log.Printf("Error writing response: %v", err)
+		}
 		return
 	}
 }
@@ -106,7 +114,9 @@ func main() {
 	mux.HandleFunc("GET /api/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
+		if _, err := w.Write([]byte("OK")); err != nil {
+			log.Printf("Error writing response: %v", err)
+		}
 	})
 	mux.HandleFunc("GET /admin/metrics", cfg.showMetrics)
 	mux.HandleFunc("POST /admin/reset", cfg.resetMetrics)
