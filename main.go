@@ -1,15 +1,56 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"sync/atomic"
+	"time"
+
+	"github.com/BrenoCRSilva/chirpy/internal/database"
+	"github.com/google/uuid"
+	_ "github.com/lib/pq"
 )
 
 type apiConfig struct {
 	fileServerHits atomic.Int32
+	dbQueries      *database.Queries
+}
+
+type User struct {
+	ID        uuid.UUID `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Email     string    `json:"email"`
+}
+
+type userRequest struct {
+	Email string `json:"email"`
+}
+
+func (cfg *apiConfig) placeholder(w http.ResponseWriter, r *http.Request) {
+	decoder := json.NewDecoder(r.Body)
+	req := userRequest{}
+	err := decoder.Decode(&req)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+	}
+	user, err := cfg.dbQueries.CreateUser(r.Context(), req.Email)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+	}
+	data, err := json.Marshal(user)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+	}
+	if _, err := w.Write(data); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
 }
 
 func (cfg *apiConfig) middleware(next http.Handler) http.Handler {
@@ -65,7 +106,7 @@ func chirpValidateHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(500)
-		if _, err := w.Write([]byte(data)); err != nil {
+		if _, err := w.Write(data); err != nil {
 			log.Printf("Error writing response: %v", err)
 		}
 		return
@@ -80,7 +121,7 @@ func chirpValidateHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(400)
-		if _, err := w.Write([]byte(data)); err != nil {
+		if _, err := w.Write(data); err != nil {
 			log.Printf("Error writing response: %v", err)
 		}
 		return
@@ -95,7 +136,7 @@ func chirpValidateHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(200)
-		if _, err := w.Write([]byte(data)); err != nil {
+		if _, err := w.Write(data); err != nil {
 			log.Printf("Error writing response: %v", err)
 		}
 		return
@@ -103,12 +144,18 @@ func chirpValidateHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	dbURL := os.Getenv("DB_URL")
+	db, err := sql.Open("postgres", dbURL)
+	if err != nil {
+		log.Fatalf("Error opening database: %v", err)
+	}
+	dbQueries := database.New(db)
 	mux := http.NewServeMux()
 	srv := &http.Server{
 		Handler: mux,
 		Addr:    ":8080",
 	}
-	cfg := apiConfig{}
+	cfg := apiConfig{dbQueries: dbQueries}
 	handler := http.StripPrefix("/app", http.FileServer(http.Dir(".")))
 	mux.Handle("/app/", cfg.middleware(handler))
 	mux.HandleFunc("GET /api/healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -121,6 +168,7 @@ func main() {
 	mux.HandleFunc("GET /admin/metrics", cfg.showMetrics)
 	mux.HandleFunc("POST /admin/reset", cfg.resetMetrics)
 	mux.HandleFunc("POST /api/validate_chirp", chirpValidateHandler)
-	err := srv.ListenAndServe()
+	mux.HandleFunc("POST /api/users", cfg.placeholder)
+	err = srv.ListenAndServe()
 	log.Fatal(err)
 }
